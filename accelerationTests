@@ -1,0 +1,70 @@
+import curses
+import numpy as np
+import sympy as sp
+import json
+import time
+from pyfirmata import ArduinoMega, SERVO
+import matplotlib.pyplot as plt
+from robotClass import robot, calcJointVol
+
+#matplotlib.use('Qt5Agg')
+plot = True
+oLoadSleep = 0.01
+vMax = 315                                                     #deg/sec from data sheet
+j270 = [0,1,2]
+acc = 200
+decl = 100
+servo_pins = [2, 3, 4, 5, 6, 7]
+ardWanted = False
+fHome = [90.,90.,30.,90.,90.,90.]
+limits = np.array([[-90,90],
+                   [-45,110],
+                   [-45,225],
+                   [-90,90],
+                   [-90,90],
+                   [-90,90]])
+
+arm = robot(servo_pins,j270, 8, fHome, 45,0, ardWanted, limits)
+
+#Ramp vars
+#antiJERK
+t,m,a,l,d= sp.symbols('t m a l d')
+k1 = ((30*m)/((a)**5))
+k2 = (-291600 * m )/ (-9720 * d**5 + 48600 * d**4 * l - 97200 * d**3 * l**2 + 97200 * d**2 * l**3 - 48600 * d * l**4 + 9720 * l**5)
+
+#Acceleration Equations
+aEq = k1 * ((t**2) * ((t - a)**2))
+lEq = 0
+dEq = -((t - l)**2 * (t - d)**2) * k2
+
+#Volocity equations
+vAEq = sp.integrate(aEq,  t)
+vLEq = sp.integrate(lEq , t) + vAEq.subs(t, a)
+vDEq = sp.integrate(dEq , t) - sp.integrate(dEq , (t, 0, l)) + vAEq.subs(t, a)
+
+#Location equations
+pAEq = sp.integrate(vAEq , t)
+pLEq = sp.integrate(vLEq , t) - pAEq.subs(t, a)
+pDEq = sp.integrate(vDEq , t) - sp.integrate(vDEq , (t, 0, l)) + pLEq.subs(t, l)
+
+#Jerk equations
+jAEq = aEq.diff(t)
+jDEq = dEq.diff(t)
+
+#minum angle to move for full acceleration and deceletation
+ttA   = vMax/acc                                      
+ttL   = ttA
+ttD   = vMax/decl +ttA
+mMove = pDEq.subs([(a, ttA),(l, ttL),(d,ttD),(t,ttD),(m,vMax)])
+
+
+
+while True:
+    arr = np.array([[np.random.uniform(-50,50)], [np.random.uniform(-45,100)], [np.random.uniform(-45,100)], [np.random.uniform(-90,90)], [np.random.uniform(-90,90)], [np.random.uniform(-90,90)]])
+    print(arm.getPos())
+    print(arr)
+    arm.updateAll(arr)
+    print(arm.getPos())
+    time.sleep(3)
+
+#board.digital[servo_pins].write(aPos)
